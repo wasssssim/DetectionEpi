@@ -68,3 +68,8 @@ Vous pouvez personnaliser l'exécution avec des arguments :
 | `--model` | Choisir un fichier modèle spécifique | `--model best.pt` |
 | `--conf` | Régler la sensibilité (0.1 à 1.0) | `--conf 0.7` |
 | `--port` | Changer le port DroidCam (défaut 4747) | `--port 4747` |
+
+```bash
+
+python TestVideo.py --droidcam --ip 192.168.1.25 --conf 0.6 --model runs/detect/train/weights/best.pt
+```
