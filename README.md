@@ -38,6 +38,7 @@ Si vous récupérez le projet pour la première fois :
 
 Pour lancer un nouvel entraînement du modèle sur votre GPU :
 
+Récupérer un Datasets 
 ```bash
  python Train.py
 ```

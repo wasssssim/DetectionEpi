@@ -1,0 +1,9 @@
+
+path: C:\Users\raouf\Cours\5A\DetectionEpi\Datasets
+
+train: train/images
+val: valid/images
+test: test/images
+
+nc: 3
+names: ['casque', 'no_safety_vest', 'safety_vest']

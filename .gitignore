@@ -8,4 +8,6 @@ __pycache__/
 
 runs/
 
-Datasets/
+Datasets/test
+Datasets/train
+Datasets/valid
