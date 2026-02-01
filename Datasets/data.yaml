@@ -5,5 +5,5 @@ train: train/images
 val: valid/images
 test: test/images
 
-nc: 3
-names: ['casque', 'no_safety_vest', 'safety_vest']
+nc: 2
+names: [ 'no_safety_vest', 'safety_vest']

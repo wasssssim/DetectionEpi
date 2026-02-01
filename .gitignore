@@ -6,7 +6,6 @@ __pycache__/
 *.pt
 *.onnx
 
-runs/
 
 Datasets/test
 Datasets/train

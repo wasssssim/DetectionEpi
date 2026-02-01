@@ -1,0 +1,14 @@
+path: C:\Users\raouf\Cours\5A\DetectionEpi\Datasets\SafetyVest
+
+train: train/images
+val: valid/images
+test: test/images
+
+names: ['no-vest', 'vest']
+
+roboflow:
+  workspace: roboflow-universe-projects
+  project: safety-vests
+  version: 7
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/roboflow-universe-projects/safety-vests/dataset/7

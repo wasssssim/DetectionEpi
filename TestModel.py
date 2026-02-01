@@ -28,10 +28,10 @@ else:
 
 
 
-model = YOLO('runs\detect\model_casque8\weights\\best.pt')
+model = YOLO('runs\detect\model_gilet2\weights\\best.pt')
 
         
-classNames = ["Casque"]
+classNames = ["no_safety_vest", "safety_vest"]
 
 cap = cv2.VideoCapture(source_video)
 
