@@ -10,3 +10,5 @@ __pycache__/
 Datasets/test
 Datasets/train
 Datasets/valid
+
+web/node_modules

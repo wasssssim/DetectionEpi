@@ -1,93 +1,119 @@
 import cv2
+import os
+import asyncio
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+from contextlib import asynccontextmanager
+from datetime import datetime
+
 from core.camera import CameraStream
 from core.detector import EPIDetector
-import asyncio
-import json
-import os
-import uvicorn 
-from fastapi.staticfiles import StaticFiles 
-from contextlib import asynccontextmanager 
-from fastapi.responses import HTMLResponse, FileResponse
 
+# --- CONFIGURATION ---
 ALERTS_DIR = os.path.join("data", "alerts")
 os.makedirs(ALERTS_DIR, exist_ok=True)
-app = FastAPI()
+infractions_history = [] 
 
-# Initialisation (A adapter avec tes IPs)
-detector = EPIDetector(model_path="../runs\detect\model_gilet2\weights\\best.pt")
+# Correction du chemin (utilisation de / pour éviter les soucis Windows/Linux)
+MODEL_PATH = "runs/detect/model_gilet2/weights/best.pt"
+
+# Initialisation des composants
+detector = EPIDetector(model_path=MODEL_PATH)
 cameras = {
-    "cam_1": CameraStream("http://192.168.1.157:4747/video") 
+    "cam_1": CameraStream("http://192.168.1.157:4747/video"),
+    "cam_2": CameraStream("http://192.168.1.173:4747/video") 
 }
 
-# Gestion des clients WebSockets (pour les alertes)
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: list[WebSocket] = []
-
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
-        self.active_connections.append(websocket)
-
-    def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
-
-    async def broadcast(self, message: dict):
-        for connection in self.active_connections:
-            await connection.send_json(message)
+        self.active_connections = []
+    async def connect(self, ws):
+        await ws.accept()
+        self.active_connections.append(ws)
+    def disconnect(self, ws):
+        if ws in self.active_connections:
+            self.active_connections.remove(ws)
+    async def broadcast(self, data):
+        for conn in self.active_connections:
+            try:
+                await conn.send_json(data)
+            except:
+                continue # Évite de bloquer si une connexion est morte
 
 manager = ConnectionManager()
 
-# --- LOGIQUE DE DÉTECTION EN ARRIÈRE-PLAN ---
-async def background_monitoring():
+# --- LOGIQUE IA ---
+async def monitor_loop():
     while True:
-        for cam_id, cam in cameras.items():
-            frame = cam.get_frame()
-            if frame is not None:
-                _, detections = detector.process_frame(frame)
+        for cid, cam in cameras.items(): # cid est la clé (ex: "cam_1")
+            img = cam.get_frame()
+            if img is not None:
+                # On analyse l'image
+                annotated_img, detections = detector.process_frame(img)
                 
                 for d in detections:
-                    if d['label'] == "no_safety_vest" and d['conf'] > 0.6:
-                        filename = f"data/alerts/alert_{cam_id}.jpg"
-                        cv2.imwrite(filename, frame)
+                    if d['label'] == "NO_VEST":
+                        # On enregistre l'image ANNOTÉE (avec les dessins) pour la preuve
+                        fname = f"alert_{cid}_{datetime.now().strftime('%H%M%S')}.jpg"
+                        save_path = os.path.join(ALERTS_DIR, fname)
+                        cv2.imwrite(save_path, annotated_img) 
                         
-                        await manager.broadcast({
-                            "type": "ALERTE",
-                            "camera": cam_id,
-                            "msg": "EPI MANQUANT !",
-                            "img_url": f"/static/alerts/alert_{cam_id}.jpg"
-                        })
-        await asyncio.sleep(0.5) 
+                        new_alert = {
+                            "id": len(infractions_history) + 1,
+                            "date": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                            "epi": "Gilet de sécurité",
+                            "camera": cid, # <-- FIX : on utilise 'cid', pas 'cam_id'
+                            "photo": f"/static/{fname}"
+                        }
+                        infractions_history.append(new_alert)
+                        # Alerte en temps réel via WebSocket
+                        await manager.broadcast({"type": "ALERTE", **new_alert})
+        
+        # Pause de 0.5s pour ne pas brûler le CPU de la RPi5 inutilement
+        await asyncio.sleep(0.5)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("Démarrage du monitoring IA...")
-    task = asyncio.create_task(background_monitoring())
-    
-    yield 
-    
-    print("Arrêt du monitoring...")
+    print("🚀 SafeGate : Démarrage du moteur IA...")
+    task = asyncio.create_task(monitor_loop())
+    yield
+    print("🛑 SafeGate : Arrêt du système...")
     task.cancel()
-app.mount("/static", StaticFiles(directory=ALERTS_DIR), name="static")
+
 app = FastAPI(lifespan=lifespan)
 
-def generate_frames(cam_id):
-    print(f"DEBUG: Requête de flux pour {cam_id}")
-    while True:
-        frame = cameras[cam_id].get_frame()
+# --- ROUTES ---
+app.mount("/static", StaticFiles(directory=ALERTS_DIR), name="static")
+app.mount("/web", StaticFiles(directory="web"), name="web")
 
-        if frame is not None:
-            annotated_frame, _ = detector.process_frame(frame)
-            _, buffer = cv2.imencode('.jpg', annotated_frame)
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
 @app.get("/")
 async def get_index():
     return FileResponse("web/index.html")
+
 @app.get("/video/{cam_id}")
 async def video_feed(cam_id: str):
-    return StreamingResponse(generate_frames(cam_id), media_type="multipart/x-mixed-replace; boundary=frame")
+    if cam_id not in cameras:
+        return {"error": "Camera non trouvée"}
+        
+    def frame_gen():
+        while True:
+            frame = cameras[cam_id].get_frame()
+            if frame is not None:
+                # On dessine les box sur le flux live
+                annotated_frame, _ = detector.process_frame(frame)
+                _, buffer = cv2.imencode('.jpg', annotated_frame)
+                yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+    
+    return StreamingResponse(frame_gen(), media_type="multipart/x-mixed-replace; boundary=frame")
+
+@app.get("/stats")
+async def get_stats():
+    return {"today": len(infractions_history), "yesterday": 0}
+
+@app.get("/history")
+async def get_history():
+    return infractions_history[::-1][:10] # 10 derniers
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -98,6 +124,7 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
-
 if __name__ == "__main__":
+    import uvicorn
+    # Important : host 0.0.0.0 pour être accessible depuis l'IP de la RPi
     uvicorn.run(app, host="0.0.0.0", port=8000)
