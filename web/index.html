@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DetectionEpi - Panneau d'Administration</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --accent: #3b82f6;
+            --danger: #ef4444;
+            --text: #f8fafc;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text);
+            margin: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* --- SIDEBAR --- */
+        #sidebar {
+            width: 320px;
+            background-color: var(--card-bg);
+            border-right: 1px solid #334155;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+        }
+
+        .logo-area {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-bottom: 30px;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .section-title {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            color: #94a3b8;
+            margin: 20px 0 10px 0;
+        }
+
+        .cam-list button {
+            width: 100%;
+            padding: 12px;
+            background: #334155;
+            border: none;
+            color: white;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            text-align: left;
+            transition: 0.3s;
+        }
+
+        .cam-list button:hover { background: var(--accent); }
+
+        /* --- MAIN VIEW --- */
+        #main-monitor {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            align-items: center;
+        }
+
+        .video-container {
+            width: 100%;
+            max-width: 900px;
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            border: 2px solid #334155;
+        }
+
+        #main-stream {
+            width: 100%;
+            display: block;
+            min-height: 400px;
+            background: url('https://via.placeholder.com/640x480?text=Attente+du+flux...') center no-repeat;
+        }
+
+        /* --- ALERT PANEL --- */
+        #alert-panel {
+            width: 350px;
+            background-color: var(--card-bg);
+            border-left: 1px solid #334155;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+        }
+
+        #alert-container {
+            overflow-y: auto;
+            flex-grow: 1;
+        }
+
+        .alert-card {
+            background: #7f1d1d;
+            border-left: 4px solid var(--danger);
+            padding: 12px;
+            margin-bottom: 12px;
+            border-radius: 6px;
+            animation: slideIn 0.3s ease-out;
+            cursor: pointer;
+        }
+
+        .alert-card img {
+            width: 100%;
+            border-radius: 4px;
+            margin-top: 8px;
+        }
+
+        .alert-time { font-size: 0.75rem; opacity: 0.8; }
+
+        @keyframes slideIn {
+            from { transform: translateX(50px); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="sidebar">
+        <div class="logo-area">DetectionEPI</div>
+        
+        <div class="section-title">Caméras Actives</div>
+        <div class="cam-list">
+            <button onclick="switchCam('cam_1')">📍 Entrée Entrepôt (Cam 1)</button>
+        </div>
+    </div>
+
+    <div id="main-monitor">
+        <h2 id="current-cam-name">Veille du système</h2>
+        <div class="video-container">
+            <img id="main-stream" src="" alt="Flux Vidéo">
+        </div>
+        <p style="color: #94a3b8; margin-top: 15px;">Status: <span id="status-text" style="color: #22c55e;">Connecté au serveur</span></p>
+    </div>
+
+    <div id="alert-panel">
+        <div class="section-title">Dernières Alertes</div>
+        <div id="alert-container">
+            </div>
+    </div>
+
+<script>
+    const streamImg = document.getElementById('main-stream');
+    const alertContainer = document.getElementById('alert-container');
+    const statusText = document.getElementById('status-text');
+
+    // --- FORCE L'ADRESSE DU SERVEUR ---
+    // Si on est sur http://localhost:8000, on utilise cette adresse.
+    // Sinon (si on a ouvert le fichier localement), on force localhost:8000.
+    const serverIP = window.location.hostname === "" ? "127.0.0.1" : window.location.hostname;
+    const serverPort = "8000";
+    const serverHost = `${serverIP}:${serverPort}`;
+
+    console.log("Tentative de connexion vers :", serverHost);
+
+    // 1. Gestion du flux vidéo
+    function switchCam(camId) {
+        document.getElementById('current-cam-name').innerText = "Direct : " + camId;
+        // On force l'URL complète pour éviter le ERR_NAME_NOT_RESOLVED
+        streamImg.src = `http://${serverHost}/video/${camId}`;
+    }
+
+    // 2. Connexion WebSocket
+    function connectWS() {
+        const wsUrl = `ws://${serverHost}/ws`;
+        const socket = new WebSocket(wsUrl);
+
+        socket.onopen = () => {
+            statusText.innerText = "Connecté (Live)";
+            statusText.style.color = "#22c55e";
+        };
+
+        socket.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.type === "ALERTE") {
+                addAlert(data);
+            }
+        };
+
+        socket.onclose = () => {
+            statusText.innerText = "Déconnecté - Reconnexion...";
+            statusText.style.color = "#ef4444";
+            setTimeout(connectWS, 2000);
+        };
+
+        socket.onerror = (err) => {
+            console.error("Erreur WebSocket :", err);
+        };
+    }
+
+    function addAlert(data) {
+        const now = new Date().toLocaleTimeString();
+        // On s'assure que l'URL de l'image est complète
+        const fullImgUrl = `http://${serverHost}${data.img_url}`;
+        
+        const alertHtml = `
+            <div class="alert-card" onclick="switchCam('${data.camera}')">
+                <div style="display: flex; justify-content: space-between;">
+                    <strong>⚠️ ${data.msg}</strong>
+                    <span class="alert-time">${now}</span>
+                </div>
+                <div style="font-size: 0.85rem; margin-top: 4px;">Source: ${data.camera}</div>
+                <img src="${fullImgUrl}" alt="Preuve">
+            </div>
+        `;
+        alertContainer.insertAdjacentHTML('afterbegin', alertHtml);
+    }
+
+    connectWS();
+</script>
+</body>
+</html>
