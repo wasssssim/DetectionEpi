@@ -6,6 +6,8 @@ from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from datetime import datetime
+from picamera2 import Picamera2
+
 
 from core.camera import CameraStream
 from core.detector import EPIDetector
@@ -19,11 +21,30 @@ infractions_history = []
 MODEL_PATH = "runs/detect/model_gilet2/weights/best.pt"
 
 # Initialisation des composants
+
+
+class PiCamWrapper:
+    def __init__(self):
+        self.picam = Picamera2()
+        # Configuration standard pour le Pi 5
+        config = self.picam.create_preview_configuration(main={"format": "BGR24", "size": (640, 480)})
+        self.picam.configure(config)
+        self.picam.start()
+
+    def get_frame(self):
+        # On capture une image directement en format OpenCV (BGR)
+        return self.picam.capture_array()
+
+# --- Initialisation ---
+picam2_wrapped = PiCamWrapper()
 detector = EPIDetector(model_path=MODEL_PATH)
+
 cameras = {
     "cam_1": CameraStream("http://192.168.1.157:4747/video"),
-    "cam_2": CameraStream("http://192.168.1.173:4747/video") 
+    "cam_2": picam2_wrapped  # Utilise le wrapper ici !
 }
+
+
 
 class ConnectionManager:
     def __init__(self):
