@@ -5,6 +5,7 @@ __pycache__/
 
 *.pt
 *.onnx
+.venv/
 
 
 Datasets/test

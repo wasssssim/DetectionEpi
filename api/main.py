@@ -27,7 +27,7 @@ class PiCamWrapper:
     def __init__(self):
         self.picam = Picamera2()
         # Configuration standard pour le Pi 5
-        config = self.picam.create_preview_configuration(main={"format": "BGR24", "size": (640, 480)})
+        config = self.picam.create_preview_configuration(main={"format": "RGB888", "size": (640, 480)})
         self.picam.configure(config)
         self.picam.start()
 
